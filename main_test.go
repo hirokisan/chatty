@@ -49,9 +49,9 @@ func TestGetReply(t *testing.T) {
 
 	client := testhelper.NewTestClient(server.URL)
 
-	message := "my name is chatty"
+	message := createMessages("my name is chatty", nil)
 	got, err := getReply(ctx, client, message)
 	require.NoError(t, err)
 
-	assert.Equal(t, respBody.Choices[0].Message.Content, got)
+	assert.Equal(t, respBody.Choices[0].Message, *got)
 }
