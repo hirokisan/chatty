@@ -1,18 +1,19 @@
-package main
+package message
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 
 	"github.com/hirokisan/chatty/testhelper"
-	openai "github.com/sashabaranov/go-openai"
+	"github.com/sashabaranov/go-openai"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetReply(t *testing.T) {
+func TestHistoricalMessenger_GetReply(t *testing.T) {
 	ctx := context.Background()
 
 	path := "/chat/completions"
@@ -49,9 +50,19 @@ func TestGetReply(t *testing.T) {
 
 	client := testhelper.NewTestClient(server.URL)
 
-	message := createMessages("my name is chatty", nil)
-	got, err := getReply(ctx, client, message)
+	var store bytes.Buffer
+	messenger := NewHistoricalMessenger(&store)
+
+	message := "my name is chatty"
+	got, err := messenger.GetReply(ctx, client, message)
 	require.NoError(t, err)
 
-	assert.Equal(t, respBody.Choices[0].Message, *got)
+	{
+		assert.Equal(t, respBody.Choices[0].Message, *got)
+
+		var messageHistory []openai.ChatCompletionMessage
+		require.NoError(t, json.NewDecoder(&store).Decode(&messageHistory))
+
+		assert.Equal(t, message, messageHistory[0].Content)
+	}
 }

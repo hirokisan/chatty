@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
 
+	"github.com/hirokisan/chatty/message"
 	openai "github.com/sashabaranov/go-openai"
 	"github.com/spf13/cobra"
 )
+
+func main() {
+	if err := cmd.Execute(); err != nil {
+		log.Fatal(err)
+	}
+}
 
 var cmd = &cobra.Command{
 	Use:   "chatty",
@@ -26,27 +30,15 @@ var cmd = &cobra.Command{
 		}
 		client := openai.NewClient(key)
 
-		messagesPath, acceptMessageHistory := os.LookupEnv("CHATTY_MESSAGES_PATH")
-
-		var messageHistory []openai.ChatCompletionMessage
-		if acceptMessageHistory {
-			if err := loadMessageHistory(messagesPath, &messageHistory); err != nil {
-				return fmt.Errorf("load message history: %w", err)
-			}
+		messenger, err := getMessenger()
+		if err != nil {
+			return fmt.Errorf("get messenger: %w", err)
 		}
 
-		message := strings.Join(args, " ")
-		messages := createMessages(message, messageHistory)
-
-		reply, err := getReply(ctx, client, messages)
+		msg := strings.Join(args, " ")
+		reply, err := messenger.GetReply(ctx, client, msg)
 		if err != nil {
 			return fmt.Errorf("get reply: %w", err)
-		}
-
-		if acceptMessageHistory {
-			if err := updateMessageHistory(messagesPath, append(messages, *reply)); err != nil {
-				return fmt.Errorf("update message history: %w", err)
-			}
 		}
 
 		fmt.Println(reply.Content)
@@ -54,74 +46,16 @@ var cmd = &cobra.Command{
 	},
 }
 
-func main() {
-	if err := cmd.Execute(); err != nil {
-		log.Fatal(err)
-	}
-}
+func getMessenger() (message.Messenger, error) {
+	messagesPath, acceptMessageHistory := os.LookupEnv("CHATTY_MESSAGES_PATH")
+	if acceptMessageHistory {
+		file, err := os.OpenFile(messagesPath, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			return nil, fmt.Errorf("create or open file: %w", err)
+		}
+		defer file.Close()
 
-func loadMessageHistory(
-	path string,
-	messageHistory *[]openai.ChatCompletionMessage,
-) error {
-	file, err := os.OpenFile(path, os.O_CREATE, 0666)
-	if err != nil {
-		return fmt.Errorf("create or open file: %w", err)
+		return message.NewHistoricalMessenger(file), nil
 	}
-	defer file.Close()
-	if err := json.NewDecoder(file).Decode(&messageHistory); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("decode: %w", err)
-	}
-	return nil
-}
-
-func updateMessageHistory(
-	path string,
-	messageHistory []openai.ChatCompletionMessage,
-) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("open file: %w", err)
-	}
-	defer file.Close()
-
-	bytes, err := json.MarshalIndent(messageHistory, "", " ")
-	if _, err := file.Write(bytes); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-	return nil
-}
-
-func createMessages(
-	message string,
-	history []openai.ChatCompletionMessage,
-) []openai.ChatCompletionMessage {
-	return append(history, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: message,
-	})
-}
-
-func getReply(
-	ctx context.Context,
-	client *openai.Client,
-	messages []openai.ChatCompletionMessage,
-) (*openai.ChatCompletionMessage, error) {
-	resp, err := client.CreateChatCompletion(
-		ctx,
-		openai.ChatCompletionRequest{
-			Model:    openai.GPT3Dot5Turbo,
-			Messages: messages,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("createChatCompletion: %v", err)
-	}
-
-	expectedReplyLength := 1
-	if len(resp.Choices) != expectedReplyLength {
-		return nil, fmt.Errorf("length of choices should be %d", expectedReplyLength)
-	}
-
-	return &resp.Choices[expectedReplyLength-1].Message, nil
+	return message.NewIndependentMessenger(), nil
 }
