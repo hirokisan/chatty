@@ -17,6 +17,12 @@ And then, set the key in the environment variable.
 $ export OPEN_AI_KEY={key}
 ```
 
+If you wish to record past exchanges and conversations, please specify a file path for the record in an environment variable.
+
+```console
+$ export CHATTY_MESSAGES_PATH={filepath}
+```
+
 ## Installation
 
 ```console
