@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -23,14 +26,30 @@ var cmd = &cobra.Command{
 		}
 		client := openai.NewClient(key)
 
-		message := strings.Join(args, " ")
+		messagesPath, acceptMessageHistory := os.LookupEnv("CHATTY_MESSAGES_PATH")
 
-		reply, err := getReply(ctx, client, message)
+		var messageHistory []openai.ChatCompletionMessage
+		if acceptMessageHistory {
+			if err := loadMessageHistory(messagesPath, &messageHistory); err != nil {
+				return fmt.Errorf("load message history: %w", err)
+			}
+		}
+
+		message := strings.Join(args, " ")
+		messages := createMessages(message, messageHistory)
+
+		reply, err := getReply(ctx, client, messages)
 		if err != nil {
 			return fmt.Errorf("get reply: %w", err)
 		}
 
-		fmt.Println(reply)
+		if acceptMessageHistory {
+			if err := updateMessageHistory(messagesPath, append(messages, *reply)); err != nil {
+				return fmt.Errorf("update message history: %w", err)
+			}
+		}
+
+		fmt.Println(sanitizeMessage(reply.Content))
 		return nil
 	},
 }
@@ -41,17 +60,57 @@ func main() {
 	}
 }
 
+func sanitizeMessage(message string) string {
+	return strings.ReplaceAll(message, "\n", "")
+}
+
+func loadMessageHistory(
+	path string,
+	messageHistory *[]openai.ChatCompletionMessage,
+) error {
+	file, err := os.OpenFile(path, os.O_CREATE, 0666)
+	if err != nil {
+		return fmt.Errorf("create or open file: %w", err)
+	}
+	defer file.Close()
+	if err := json.NewDecoder(file).Decode(&messageHistory); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Errorf("decode: %w", err)
+	}
+	return nil
+}
+
+func updateMessageHistory(
+	path string,
+	messageHistory []openai.ChatCompletionMessage,
+) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	bytes, err := json.MarshalIndent(messageHistory, "", " ")
+	if _, err := file.Write(bytes); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	return nil
+}
+
+func createMessages(
+	message string,
+	history []openai.ChatCompletionMessage,
+) []openai.ChatCompletionMessage {
+	return append(history, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: message,
+	})
+}
+
 func getReply(
 	ctx context.Context,
 	client *openai.Client,
-	message string,
-) (string, error) {
-	messages := []openai.ChatCompletionMessage{
-		{
-			Role:    openai.ChatMessageRoleUser,
-			Content: message,
-		},
-	}
+	messages []openai.ChatCompletionMessage,
+) (*openai.ChatCompletionMessage, error) {
 	resp, err := client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
@@ -60,14 +119,13 @@ func getReply(
 		},
 	)
 	if err != nil {
-		return "", fmt.Errorf("createChatCompletion: %v", err)
+		return nil, fmt.Errorf("createChatCompletion: %v", err)
 	}
 
-	if len(resp.Choices) < len(messages) {
-		return "", fmt.Errorf("length of choices should be more than %d but got %d", len(messages), len(resp.Choices))
+	expectedReplyLength := 1
+	if len(resp.Choices) != expectedReplyLength {
+		return nil, fmt.Errorf("length of choices should be %d", expectedReplyLength)
 	}
 
-	reply := strings.ReplaceAll(resp.Choices[len(messages)-1].Message.Content, "\n", "")
-
-	return reply, nil
+	return &resp.Choices[expectedReplyLength-1].Message, nil
 }
