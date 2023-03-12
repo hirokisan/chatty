@@ -1,3 +1,6 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/hirokisan/chatty)](https://goreportcard.com/report/github.com/hirokisan/chatty)
+[![test](https://github.com/hirokisan/chatty/actions/workflows/test.yml/badge.svg)](https://github.com/hirokisan/chatty/actions/workflows/test.yml)
+
 # chatty
 
 chatty is a cli application that will be your conversation partner in your spare time.
