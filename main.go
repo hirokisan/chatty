@@ -49,7 +49,7 @@ var cmd = &cobra.Command{
 			}
 		}
 
-		fmt.Println(sanitizeMessage(reply.Content))
+		fmt.Println(reply.Content)
 		return nil
 	},
 }
@@ -58,10 +58,6 @@ func main() {
 	if err := cmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func sanitizeMessage(message string) string {
-	return strings.ReplaceAll(message, "\n", "")
 }
 
 func loadMessageHistory(
