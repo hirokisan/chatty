@@ -13,11 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testWriter struct {
+type testStore struct {
 	bytes.Buffer
 }
 
-func (w *testWriter) WriteAt(b []byte, _ int64) (n int, err error) {
+func (w *testStore) WriteAt(b []byte, _ int64) (n int, err error) {
 	w.Buffer = *bytes.NewBuffer(b)
 	return len(b), nil
 }
@@ -59,7 +59,7 @@ func TestHistoricalMessenger_GetReply(t *testing.T) {
 
 	client := testhelper.NewTestClient(server.URL)
 
-	var store testWriter
+	var store testStore
 	messenger := NewHistoricalMessenger(&store)
 
 	message := "my name is chatty"
