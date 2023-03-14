@@ -59,19 +59,56 @@ func TestHistoricalMessenger_GetReply(t *testing.T) {
 
 	client := testhelper.NewTestClient(server.URL)
 
-	var store testStore
-	messenger := NewHistoricalMessenger(&store)
+	t.Run("with empty store", func(t *testing.T) {
+		var store testStore
+		messenger := NewHistoricalMessenger(&store)
 
-	message := "my name is chatty"
-	got, err := messenger.GetReply(ctx, client, message)
-	require.NoError(t, err)
+		message := "my name is chatty"
+		got, err := messenger.GetReply(ctx, client, message)
+		require.NoError(t, err)
 
-	{
-		assert.Equal(t, respBody.Choices[0].Message, *got)
+		{
+			assert.Equal(t, respBody.Choices[0].Message, *got)
 
-		var messageHistory []openai.ChatCompletionMessage
-		require.NoError(t, json.NewDecoder(&store).Decode(&messageHistory))
+			var messageHistory []openai.ChatCompletionMessage
+			require.NoError(t, json.NewDecoder(&store).Decode(&messageHistory))
 
-		assert.Equal(t, message, messageHistory[0].Content)
-	}
+			assert.Equal(t, message, messageHistory[0].Content)
+			assert.Equal(t, got.Content, messageHistory[1].Content)
+		}
+	})
+
+	t.Run("with store contains history", func(t *testing.T) {
+		history := []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: "tell me your name",
+			},
+			{
+				Role:    openai.ChatMessageRoleAssistant,
+				Content: "You can call me Chatty. How can I assist you today?",
+			},
+		}
+		var store testStore
+		require.NoError(t, json.NewEncoder(&store).Encode(history))
+		messenger := NewHistoricalMessenger(&store)
+
+		message := "my name is chatty"
+		got, err := messenger.GetReply(ctx, client, message)
+		require.NoError(t, err)
+
+		{
+			assert.Equal(t, respBody.Choices[0].Message, *got)
+
+			var messageHistory []openai.ChatCompletionMessage
+			require.NoError(t, json.NewDecoder(&store).Decode(&messageHistory))
+
+			expectedLength := len(history) + 2
+			require.Len(t, messageHistory, expectedLength)
+
+			assert.Equal(t, message, messageHistory[expectedLength-2].Content)
+			assert.Equal(t, got.Content, messageHistory[expectedLength-1].Content)
+		}
+	})
+
 }
