@@ -27,8 +27,8 @@ func (m *historicalMessenger) GetReply(
 	client *openai.Client,
 	message string,
 ) (*openai.ChatCompletionMessage, error) {
-	var messageHistory []openai.ChatCompletionMessage
-	if err := m.load(&messageHistory); err != nil {
+	messageHistory, err := m.load()
+	if err != nil {
 		return nil, fmt.Errorf("load message history: %w", err)
 	}
 
@@ -49,15 +49,16 @@ func (m *historicalMessenger) GetReply(
 // HistoryStore :
 type HistoryStore interface {
 	io.Reader
-	io.Writer
+	io.WriterAt
 }
 
 // load :
-func (m *historicalMessenger) load(messageHistory *[]openai.ChatCompletionMessage) error {
-	if err := json.NewDecoder(m.store).Decode(&messageHistory); err != nil && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("decode: %w", err)
+func (m *historicalMessenger) load() ([]openai.ChatCompletionMessage, error) {
+	var history []openai.ChatCompletionMessage
+	if err := json.NewDecoder(m.store).Decode(&history); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("decode: %w", err)
 	}
-	return nil
+	return history, nil
 }
 
 // update :
@@ -66,7 +67,7 @@ func (m *historicalMessenger) update(messageHistory []openai.ChatCompletionMessa
 	if err != nil {
 		return fmt.Errorf("json marshal: %w", err)
 	}
-	if _, err := m.store.Write(bytes); err != nil {
+	if _, err := m.store.WriteAt(bytes, 0); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 	return nil
